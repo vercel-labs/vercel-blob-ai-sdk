@@ -4,7 +4,7 @@ Guidelines for AI coding agents working in this repository.
 
 ## Project Overview
 
-TypeScript library providing [AI SDK](https://ai-sdk.dev) tools for [Vercel Blob](https://vercel.com/docs/vercel-blob) storage. Exports: `uploadAsset`, `listAssets`, `deleteAsset`, `deleteAssets`, `copyAsset`, `getAssetInfo`, `downloadAsset`.
+TypeScript library providing [AI SDK](https://ai-sdk.dev) tools for [Vercel Blob](https://vercel.com/docs/vercel-blob) storage. Exports: `uploadAsset`, `listAssets`, `deleteAsset`, `deleteAssets`, `copyAsset`, `getAssetInfo`, `downloadAsset`, `createBlobTools`.
 
 ## Commands
 

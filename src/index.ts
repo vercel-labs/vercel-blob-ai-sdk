@@ -76,132 +76,272 @@ const DownloadResultSchema = z.object({
   error: z.string().optional().describe("Error message if failed"),
 });
 
-export const uploadAsset = tool({
-  description:
-    "Upload a file, image, document, or text content to permanent cloud storage. " +
-    "Use this tool when the user wants to save, store, or persist any content that should be accessible via URL. " +
-    "Returns a public URL that can be shared, embedded in websites, or used in other applications.",
-  inputSchema: z.object({
-    pathname: z
-      .string()
-      .describe(
-        'The path and filename for the asset, including extension (e.g., "documents/report.pdf", "images/photo.png", "data/config.json")'
-      ),
-    content: z
-      .string()
-      .describe(
-        "The content to upload. For text/JSON, provide the raw content. For binary files like images, provide base64-encoded data and set isBase64 to true."
-      ),
-    contentType: z
-      .string()
-      .optional()
-      .describe(
-        'MIME type of the content (e.g., "text/plain", "application/json", "image/png"). If omitted, it will be inferred from the pathname extension.'
-      ),
-    isBase64: z
-      .boolean()
-      .optional()
-      .describe(
-        "Set to true if the content is base64-encoded binary data (e.g., for images, PDFs). Defaults to false."
-      ),
-  }),
-  inputExamples: [
-    { input: { pathname: "notes/meeting.txt", content: "Meeting notes..." } },
-    {
-      input: {
-        pathname: "images/logo.png",
-        content: "base64data...",
-        contentType: "image/png",
-        isBase64: true,
+// --- Helpers and interfaces ---
+
+export interface CreateBlobToolsOptions {
+  access?: "private" | "public";
+  addRandomSuffix?: boolean;
+  allowOverwrite?: boolean;
+  pathPrefix?: string;
+}
+
+interface UploadDefaults {
+  access: "private" | "public";
+  addRandomSuffix?: boolean;
+  allowOverwrite?: boolean;
+}
+
+const normalizePrefix = (prefix?: string): string => {
+  if (!prefix) {
+    return "";
+  }
+  return prefix.replace(/^\/+|\/+$/g, "");
+};
+
+const joinPath = (prefix: string, path: string): string => {
+  if (!prefix) {
+    return path;
+  }
+  return `${prefix}/${path}`;
+};
+
+// --- Path-based tool creators ---
+
+const createUploadAsset = (prefix: string, defaults: UploadDefaults) =>
+  tool({
+    description:
+      "Upload a file, image, document, or text content to permanent cloud storage. " +
+      "Use this tool when the user wants to save, store, or persist any content that should be accessible via URL. " +
+      "Returns a URL for the uploaded asset.",
+    inputSchema: z.object({
+      pathname: z
+        .string()
+        .describe(
+          'The path and filename for the asset, including extension (e.g., "documents/report.pdf", "images/photo.png", "data/config.json")'
+        ),
+      content: z
+        .string()
+        .describe(
+          "The content to upload. For text/JSON, provide the raw content. For binary files like images, provide base64-encoded data and set isBase64 to true."
+        ),
+      contentType: z
+        .string()
+        .optional()
+        .describe(
+          'MIME type of the content (e.g., "text/plain", "application/json", "image/png"). If omitted, it will be inferred from the pathname extension.'
+        ),
+      isBase64: z
+        .boolean()
+        .optional()
+        .describe(
+          "Set to true if the content is base64-encoded binary data (e.g., for images, PDFs). Defaults to false."
+        ),
+      access: z
+        .enum(["public", "private"])
+        .optional()
+        .describe(
+          'Access level for the asset. "public" makes it accessible via URL, "private" requires authentication. Defaults to the configured access level.'
+        ),
+      addRandomSuffix: z
+        .boolean()
+        .optional()
+        .describe(
+          "Whether to add a random suffix to the filename to avoid conflicts. Defaults to false."
+        ),
+      allowOverwrite: z
+        .boolean()
+        .optional()
+        .describe(
+          "Whether to allow overwriting an existing blob at the same pathname. Defaults to false."
+        ),
+    }),
+    inputExamples: [
+      {
+        input: {
+          pathname: "notes/meeting.txt",
+          content: "Meeting notes...",
+        },
       },
-    },
-  ],
-  outputSchema: UploadResultSchema,
-  strict: true,
-  execute: async ({ pathname, content, contentType, isBase64 }) => {
-    try {
-      const body = isBase64 ? Buffer.from(content, "base64") : content;
+      {
+        input: {
+          pathname: "images/logo.png",
+          content: "base64data...",
+          contentType: "image/png",
+          isBase64: true,
+        },
+      },
+    ],
+    outputSchema: UploadResultSchema,
+    strict: true,
+    execute: async ({
+      pathname,
+      content,
+      contentType,
+      isBase64,
+      access,
+      addRandomSuffix,
+      allowOverwrite,
+    }) => {
+      try {
+        const body = isBase64 ? Buffer.from(content, "base64") : content;
+        const prefixedPathname = joinPath(prefix, pathname);
 
-      const blob = await put(pathname, body, {
-        access: "public",
-        contentType,
-      });
+        const blob = await put(prefixedPathname, body, {
+          access: access ?? defaults.access,
+          contentType,
+          addRandomSuffix: addRandomSuffix ?? defaults.addRandomSuffix,
+          allowOverwrite: allowOverwrite ?? defaults.allowOverwrite,
+        });
 
-      return {
-        success: true,
-        url: blob.url,
-        downloadUrl: blob.downloadUrl,
-        pathname: blob.pathname,
-        contentType: blob.contentType,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        url: "",
-        downloadUrl: "",
-        pathname,
-        contentType: contentType || "unknown",
-        error: error instanceof Error ? error.message : "Upload failed",
-      };
-    }
-  },
-});
-
-export const listAssets = tool({
-  description:
-    "List all stored assets in cloud storage with optional filtering by folder/prefix. " +
-    "Use this tool to browse available files, find assets by folder path, search for specific content, or get an inventory of stored content. " +
-    "Returns URLs, sizes, and upload dates for each asset.",
-  inputSchema: z.object({
-    prefix: z
-      .string()
-      .optional()
-      .describe(
-        'Filter assets by path prefix/folder (e.g., "images/" to list only images, "documents/2024/" for a specific folder). Leave empty to list all assets.'
-      ),
-    limit: z
-      .number()
-      .min(1)
-      .max(1000)
-      .optional()
-      .describe(
-        "Maximum number of assets to return. Default is 1000. Use smaller values for faster responses."
-      ),
-  }),
-  inputExamples: [
-    { input: {} },
-    { input: { prefix: "images/" } },
-    { input: { prefix: "documents/", limit: 10 } },
-  ],
-  outputSchema: ListResultSchema,
-  strict: true,
-  execute: async ({ prefix, limit }) => {
-    try {
-      const { blobs, hasMore, cursor } = await list({ prefix, limit });
-
-      return {
-        assets: blobs.map((blob) => ({
+        return {
+          success: true,
           url: blob.url,
           downloadUrl: blob.downloadUrl,
           pathname: blob.pathname,
-          size: blob.size,
-          uploadedAt: blob.uploadedAt.toISOString(),
-        })),
-        count: blobs.length,
-        hasMore,
-        cursor,
-      };
-    } catch (error) {
-      console.error("Error listing assets:", error);
-      return {
-        assets: [],
-        count: 0,
-        hasMore: false,
-        error: error instanceof Error ? error.message : "Failed to list assets",
-      };
-    }
-  },
-});
+          contentType: blob.contentType,
+        };
+      } catch (error) {
+        return {
+          success: false,
+          url: "",
+          downloadUrl: "",
+          pathname,
+          contentType: contentType || "unknown",
+          error: error instanceof Error ? error.message : "Upload failed",
+        };
+      }
+    },
+  });
+
+const createListAssets = (prefix: string) =>
+  tool({
+    description:
+      "List all stored assets in cloud storage with optional filtering by folder/prefix. " +
+      "Use this tool to browse available files, find assets by folder path, search for specific content, or get an inventory of stored content. " +
+      "Returns URLs, sizes, and upload dates for each asset.",
+    inputSchema: z.object({
+      prefix: z
+        .string()
+        .optional()
+        .describe(
+          'Filter assets by path prefix/folder (e.g., "images/" to list only images, "documents/2024/" for a specific folder). Leave empty to list all assets.'
+        ),
+      limit: z
+        .number()
+        .min(1)
+        .max(1000)
+        .optional()
+        .describe(
+          "Maximum number of assets to return. Default is 1000. Use smaller values for faster responses."
+        ),
+    }),
+    inputExamples: [
+      { input: {} },
+      { input: { prefix: "images/" } },
+      { input: { prefix: "documents/", limit: 10 } },
+    ],
+    outputSchema: ListResultSchema,
+    strict: true,
+    execute: async ({ prefix: userPrefix, limit }) => {
+      try {
+        let effectivePrefix = userPrefix;
+        if (prefix) {
+          effectivePrefix = userPrefix
+            ? `${prefix}/${userPrefix}`
+            : `${prefix}/`;
+        }
+
+        const { blobs, hasMore, cursor } = await list({
+          prefix: effectivePrefix,
+          limit,
+        });
+
+        return {
+          assets: blobs.map((blob) => ({
+            url: blob.url,
+            downloadUrl: blob.downloadUrl,
+            pathname: blob.pathname,
+            size: blob.size,
+            uploadedAt: blob.uploadedAt.toISOString(),
+          })),
+          count: blobs.length,
+          hasMore,
+          cursor,
+        };
+      } catch (error) {
+        console.error("Error listing assets:", error);
+        return {
+          assets: [],
+          count: 0,
+          hasMore: false,
+          error:
+            error instanceof Error ? error.message : "Failed to list assets",
+        };
+      }
+    },
+  });
+
+const createCopyAsset = (prefix: string, defaults: UploadDefaults) =>
+  tool({
+    description:
+      "Copy an existing asset to a new location/pathname without re-uploading. " +
+      "Use to duplicate files, create backups, rename assets, or reorganize storage structure. " +
+      "The original asset remains unchanged; a new copy is created at the destination. " +
+      "NOTE: If a file already exists at the destination pathname, it will be overwritten.",
+    inputSchema: z.object({
+      sourceUrl: z.url().describe("The full public URL of the asset to copy"),
+      destinationPathname: z
+        .string()
+        .describe(
+          'The new path and filename for the copy (e.g., "backups/photo-backup.png", "archive/2024/report.pdf")'
+        ),
+      access: z
+        .enum(["public", "private"])
+        .optional()
+        .describe(
+          'Access level for the copied asset. "public" makes it accessible via URL, "private" requires authentication. Defaults to the configured access level.'
+        ),
+    }),
+    inputExamples: [
+      {
+        input: {
+          sourceUrl: "https://example.blob.vercel-storage.com/photo.png",
+          destinationPathname: "backups/photo-backup.png",
+        },
+      },
+    ],
+    outputSchema: CopyResultSchema,
+    strict: true,
+    execute: async ({ sourceUrl, destinationPathname, access }) => {
+      try {
+        const prefixedDest = joinPath(prefix, destinationPathname);
+
+        const blob = await copy(sourceUrl, prefixedDest, {
+          access: access ?? defaults.access,
+        });
+
+        return {
+          success: true,
+          sourceUrl,
+          newUrl: blob.url,
+          downloadUrl: blob.downloadUrl,
+          pathname: blob.pathname,
+        };
+      } catch (error) {
+        console.error("Error copying asset:", error);
+        return {
+          success: false,
+          sourceUrl,
+          newUrl: "",
+          downloadUrl: "",
+          pathname: destinationPathname,
+          error: error instanceof Error ? error.message : "Copy failed",
+        };
+      }
+    },
+  });
+
+// --- URL-based tools (no prefix needed) ---
 
 export const deleteAsset = tool({
   description:
@@ -216,7 +356,11 @@ export const deleteAsset = tool({
       ),
   }),
   inputExamples: [
-    { input: { url: "https://example.blob.vercel-storage.com/old-file.txt" } },
+    {
+      input: {
+        url: "https://example.blob.vercel-storage.com/old-file.txt",
+      },
+    },
   ],
   outputSchema: DeleteResultSchema,
   strict: true,
@@ -299,7 +443,11 @@ export const getAssetInfo = tool({
     url: z.url().describe("The full public URL of the asset to inspect"),
   }),
   inputExamples: [
-    { input: { url: "https://example.blob.vercel-storage.com/document.pdf" } },
+    {
+      input: {
+        url: "https://example.blob.vercel-storage.com/document.pdf",
+      },
+    },
   ],
   outputSchema: AssetInfoResultSchema,
   strict: true,
@@ -327,57 +475,6 @@ export const getAssetInfo = tool({
   },
 });
 
-export const copyAsset = tool({
-  description:
-    "Copy an existing asset to a new location/pathname without re-uploading. " +
-    "Use to duplicate files, create backups, rename assets, or reorganize storage structure. " +
-    "The original asset remains unchanged; a new copy is created at the destination. " +
-    "NOTE: If a file already exists at the destination pathname, it will be overwritten.",
-  inputSchema: z.object({
-    sourceUrl: z.url().describe("The full public URL of the asset to copy"),
-    destinationPathname: z
-      .string()
-      .describe(
-        'The new path and filename for the copy (e.g., "backups/photo-backup.png", "archive/2024/report.pdf")'
-      ),
-  }),
-  inputExamples: [
-    {
-      input: {
-        sourceUrl: "https://example.blob.vercel-storage.com/photo.png",
-        destinationPathname: "backups/photo-backup.png",
-      },
-    },
-  ],
-  outputSchema: CopyResultSchema,
-  strict: true,
-  execute: async ({ sourceUrl, destinationPathname }) => {
-    try {
-      const blob = await copy(sourceUrl, destinationPathname, {
-        access: "public",
-      });
-
-      return {
-        success: true,
-        sourceUrl,
-        newUrl: blob.url,
-        downloadUrl: blob.downloadUrl,
-        pathname: blob.pathname,
-      };
-    } catch (error) {
-      console.error("Error copying asset:", error);
-      return {
-        success: false,
-        sourceUrl,
-        newUrl: "",
-        downloadUrl: "",
-        pathname: destinationPathname,
-        error: error instanceof Error ? error.message : "Copy failed",
-      };
-    }
-  },
-});
-
 export const downloadAsset = tool({
   description:
     "Download and retrieve the full contents of an asset. " +
@@ -387,7 +484,11 @@ export const downloadAsset = tool({
     url: z.url().describe("The full public URL of the asset to download"),
   }),
   inputExamples: [
-    { input: { url: "https://example.blob.vercel-storage.com/notes.txt" } },
+    {
+      input: {
+        url: "https://example.blob.vercel-storage.com/notes.txt",
+      },
+    },
   ],
   outputSchema: DownloadResultSchema,
   strict: true,
@@ -433,3 +534,44 @@ export const downloadAsset = tool({
     }
   },
 });
+
+// --- Direct exports (no prefix) ---
+
+const defaultUploadDefaults: UploadDefaults = { access: "public" };
+
+export const uploadAsset = createUploadAsset("", defaultUploadDefaults);
+export const listAssets = createListAssets("");
+export const copyAsset = createCopyAsset("", defaultUploadDefaults);
+
+// --- Factory ---
+
+export interface BlobTools {
+  copyAsset: typeof copyAsset;
+  deleteAsset: typeof deleteAsset;
+  deleteAssets: typeof deleteAssets;
+  downloadAsset: typeof downloadAsset;
+  getAssetInfo: typeof getAssetInfo;
+  listAssets: typeof listAssets;
+  uploadAsset: typeof uploadAsset;
+}
+
+export const createBlobTools = (
+  options?: CreateBlobToolsOptions
+): BlobTools => {
+  const prefix = normalizePrefix(options?.pathPrefix);
+  const uploadDefaults: UploadDefaults = {
+    access: options?.access ?? "public",
+    addRandomSuffix: options?.addRandomSuffix,
+    allowOverwrite: options?.allowOverwrite,
+  };
+
+  return {
+    uploadAsset: createUploadAsset(prefix, uploadDefaults),
+    listAssets: createListAssets(prefix),
+    deleteAsset,
+    deleteAssets,
+    getAssetInfo,
+    copyAsset: createCopyAsset(prefix, uploadDefaults),
+    downloadAsset,
+  };
+};

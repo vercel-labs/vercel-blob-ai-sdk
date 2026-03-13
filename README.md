@@ -41,6 +41,24 @@ const { text } = await generateText({
 | `deleteAsset` | Delete a single asset (requires approval) |
 | `deleteAssets` | Delete multiple assets at once (requires approval) |
 
+## Path Prefix
+
+Use `createBlobTools` to scope all path-based operations under a prefix — useful for multi-tenant apps or organized storage:
+
+```ts
+import { createBlobTools } from "vercel-blob-ai-sdk";
+
+const { uploadAsset, listAssets, copyAsset } = createBlobTools({
+  pathPrefix: "tenant-abc",
+});
+
+// uploadAsset pathname "doc.txt" → stored as "tenant-abc/doc.txt"
+// listAssets with no prefix → lists only "tenant-abc/" assets
+// copyAsset destination "backup.txt" → copies to "tenant-abc/backup.txt"
+```
+
+The prefix applies to `uploadAsset`, `listAssets`, and `copyAsset`. URL-based tools (`deleteAsset`, `deleteAssets`, `getAssetInfo`, `downloadAsset`) are unaffected.
+
 ## Resources
 
 - [Vercel AI SDK documentation](https://ai-sdk.dev/docs/introduction)
