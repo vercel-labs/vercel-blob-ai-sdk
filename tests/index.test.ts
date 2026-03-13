@@ -2,6 +2,7 @@ import type { ToolExecutionOptions } from "ai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   copyAsset,
+  createBlobTools,
   deleteAsset,
   deleteAssets,
   downloadAsset,
@@ -72,6 +73,8 @@ describe("uploadAsset", () => {
     expect(mockPut).toHaveBeenCalledWith("test.txt", "Hello, world!", {
       access: "public",
       contentType: undefined,
+      addRandomSuffix: undefined,
+      allowOverwrite: undefined,
     });
   });
 
@@ -100,7 +103,12 @@ describe("uploadAsset", () => {
     expect(mockPut).toHaveBeenCalledWith(
       "image.png",
       Buffer.from(base64Content, "base64"),
-      { access: "public", contentType: "image/png" }
+      {
+        access: "public",
+        contentType: "image/png",
+        addRandomSuffix: undefined,
+        allowOverwrite: undefined,
+      }
     );
   });
 
@@ -607,5 +615,446 @@ describe("tool configurations", () => {
     expect(getAssetInfo.needsApproval).toBeUndefined();
     expect(copyAsset.needsApproval).toBeUndefined();
     expect(downloadAsset.needsApproval).toBeUndefined();
+  });
+});
+
+describe("createBlobTools", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns all 7 tools", () => {
+    const tools = createBlobTools();
+    expect(tools.uploadAsset).toBeDefined();
+    expect(tools.listAssets).toBeDefined();
+    expect(tools.deleteAsset).toBeDefined();
+    expect(tools.deleteAssets).toBeDefined();
+    expect(tools.getAssetInfo).toBeDefined();
+    expect(tools.copyAsset).toBeDefined();
+    expect(tools.downloadAsset).toBeDefined();
+  });
+
+  it("without options behaves same as direct exports", async () => {
+    mockPut.mockResolvedValue({
+      url: `${baseUrl}/test.txt`,
+      downloadUrl: `${baseUrl}/test.txt?download=1`,
+      pathname: "test.txt",
+      contentType: "text/plain",
+      contentDisposition: "inline",
+      etag: "test-etag",
+    });
+
+    const tools = createBlobTools();
+    await execute(tools.uploadAsset, {
+      pathname: "test.txt",
+      content: "Hello",
+    });
+
+    expect(mockPut).toHaveBeenCalledWith("test.txt", "Hello", {
+      access: "public",
+      contentType: undefined,
+      addRandomSuffix: undefined,
+      allowOverwrite: undefined,
+    });
+  });
+
+  it("with empty pathPrefix behaves same as direct exports", async () => {
+    mockPut.mockResolvedValue({
+      url: `${baseUrl}/test.txt`,
+      downloadUrl: `${baseUrl}/test.txt?download=1`,
+      pathname: "test.txt",
+      contentType: "text/plain",
+      contentDisposition: "inline",
+      etag: "test-etag",
+    });
+
+    const tools = createBlobTools({ pathPrefix: "" });
+    await execute(tools.uploadAsset, {
+      pathname: "test.txt",
+      content: "Hello",
+    });
+
+    expect(mockPut).toHaveBeenCalledWith("test.txt", "Hello", {
+      access: "public",
+      contentType: undefined,
+      addRandomSuffix: undefined,
+      allowOverwrite: undefined,
+    });
+  });
+
+  it("URL-based tools are same instances regardless of prefix", () => {
+    const tools = createBlobTools({ pathPrefix: "tenant-abc" });
+    expect(tools.deleteAsset).toBe(deleteAsset);
+    expect(tools.deleteAssets).toBe(deleteAssets);
+    expect(tools.getAssetInfo).toBe(getAssetInfo);
+    expect(tools.downloadAsset).toBe(downloadAsset);
+  });
+
+  describe("uploadAsset with pathPrefix", () => {
+    it("prepends prefix to pathname", async () => {
+      mockPut.mockResolvedValue({
+        url: `${baseUrl}/tenant-abc/photo.png`,
+        downloadUrl: `${baseUrl}/tenant-abc/photo.png?download=1`,
+        pathname: "tenant-abc/photo.png",
+        contentType: "image/png",
+        contentDisposition: "inline",
+        etag: "test-etag",
+      });
+
+      const tools = createBlobTools({ pathPrefix: "tenant-abc" });
+      await execute(tools.uploadAsset, {
+        pathname: "photo.png",
+        content: "data",
+      });
+
+      expect(mockPut).toHaveBeenCalledWith("tenant-abc/photo.png", "data", {
+        access: "public",
+        contentType: undefined,
+      });
+    });
+
+    it("normalizes prefix with slashes", async () => {
+      mockPut.mockResolvedValue({
+        url: `${baseUrl}/tenant-abc/photo.png`,
+        downloadUrl: `${baseUrl}/tenant-abc/photo.png?download=1`,
+        pathname: "tenant-abc/photo.png",
+        contentType: "image/png",
+        contentDisposition: "inline",
+        etag: "test-etag",
+      });
+
+      const tools = createBlobTools({ pathPrefix: "/tenant-abc/" });
+      await execute(tools.uploadAsset, {
+        pathname: "photo.png",
+        content: "data",
+      });
+
+      expect(mockPut).toHaveBeenCalledWith("tenant-abc/photo.png", "data", {
+        access: "public",
+        contentType: undefined,
+      });
+    });
+  });
+
+  describe("listAssets with pathPrefix", () => {
+    it("scopes to prefix when user provides no prefix", async () => {
+      mockList.mockResolvedValue({
+        blobs: [],
+        hasMore: false,
+        cursor: undefined,
+      });
+
+      const tools = createBlobTools({ pathPrefix: "tenant-abc" });
+      await execute(tools.listAssets, {});
+
+      expect(mockList).toHaveBeenCalledWith({
+        prefix: "tenant-abc/",
+        limit: undefined,
+      });
+    });
+
+    it("combines factory prefix with user prefix", async () => {
+      mockList.mockResolvedValue({
+        blobs: [],
+        hasMore: false,
+        cursor: undefined,
+      });
+
+      const tools = createBlobTools({ pathPrefix: "tenant-abc" });
+      await execute(tools.listAssets, { prefix: "images/" });
+
+      expect(mockList).toHaveBeenCalledWith({
+        prefix: "tenant-abc/images/",
+        limit: undefined,
+      });
+    });
+  });
+
+  describe("copyAsset with pathPrefix", () => {
+    it("prepends prefix to destinationPathname", async () => {
+      mockCopy.mockResolvedValue({
+        url: `${baseUrl}/tenant-abc/backup.png`,
+        downloadUrl: `${baseUrl}/tenant-abc/backup.png?download=1`,
+        pathname: "tenant-abc/backup.png",
+        contentType: "image/png",
+        contentDisposition: "inline",
+        etag: "test-etag",
+      });
+
+      const tools = createBlobTools({ pathPrefix: "tenant-abc" });
+      await execute(tools.copyAsset, {
+        sourceUrl: `${baseUrl}/photo.png`,
+        destinationPathname: "backup.png",
+      });
+
+      expect(mockCopy).toHaveBeenCalledWith(
+        `${baseUrl}/photo.png`,
+        "tenant-abc/backup.png",
+        { access: "public" }
+      );
+    });
+  });
+
+  describe("access option", () => {
+    it("factory-level access defaults to public", async () => {
+      mockPut.mockResolvedValue({
+        url: `${baseUrl}/test.txt`,
+        downloadUrl: `${baseUrl}/test.txt?download=1`,
+        pathname: "test.txt",
+        contentType: "text/plain",
+        contentDisposition: "inline",
+        etag: "test-etag",
+      });
+
+      const tools = createBlobTools();
+      await execute(tools.uploadAsset, {
+        pathname: "test.txt",
+        content: "Hello",
+      });
+
+      expect(mockPut).toHaveBeenCalledWith("test.txt", "Hello", {
+        access: "public",
+        contentType: undefined,
+      });
+    });
+
+    it("factory-level access applies to uploadAsset", async () => {
+      mockPut.mockResolvedValue({
+        url: `${baseUrl}/test.txt`,
+        downloadUrl: `${baseUrl}/test.txt?download=1`,
+        pathname: "test.txt",
+        contentType: "text/plain",
+        contentDisposition: "inline",
+        etag: "test-etag",
+      });
+
+      const tools = createBlobTools({ access: "private" });
+      await execute(tools.uploadAsset, {
+        pathname: "test.txt",
+        content: "Hello",
+      });
+
+      expect(mockPut).toHaveBeenCalledWith("test.txt", "Hello", {
+        access: "private",
+        contentType: undefined,
+        addRandomSuffix: undefined,
+        allowOverwrite: undefined,
+      });
+    });
+
+    it("factory-level access applies to copyAsset", async () => {
+      mockCopy.mockResolvedValue({
+        url: `${baseUrl}/backup.txt`,
+        downloadUrl: `${baseUrl}/backup.txt?download=1`,
+        pathname: "backup.txt",
+        contentType: "text/plain",
+        contentDisposition: "inline",
+        etag: "test-etag",
+      });
+
+      const tools = createBlobTools({ access: "private" });
+      await execute(tools.copyAsset, {
+        sourceUrl: `${baseUrl}/test.txt`,
+        destinationPathname: "backup.txt",
+      });
+
+      expect(mockCopy).toHaveBeenCalledWith(
+        `${baseUrl}/test.txt`,
+        "backup.txt",
+        { access: "private" }
+      );
+    });
+
+    it("per-call access overrides factory default", async () => {
+      mockPut.mockResolvedValue({
+        url: `${baseUrl}/test.txt`,
+        downloadUrl: `${baseUrl}/test.txt?download=1`,
+        pathname: "test.txt",
+        contentType: "text/plain",
+        contentDisposition: "inline",
+        etag: "test-etag",
+      });
+
+      const tools = createBlobTools({ access: "private" });
+      await execute(tools.uploadAsset, {
+        pathname: "test.txt",
+        content: "Hello",
+        access: "public",
+      });
+
+      expect(mockPut).toHaveBeenCalledWith("test.txt", "Hello", {
+        access: "public",
+        contentType: undefined,
+      });
+    });
+
+    it("per-call access overrides factory default on copyAsset", async () => {
+      mockCopy.mockResolvedValue({
+        url: `${baseUrl}/backup.txt`,
+        downloadUrl: `${baseUrl}/backup.txt?download=1`,
+        pathname: "backup.txt",
+        contentType: "text/plain",
+        contentDisposition: "inline",
+        etag: "test-etag",
+      });
+
+      const tools = createBlobTools({ access: "private" });
+      await execute(tools.copyAsset, {
+        sourceUrl: `${baseUrl}/test.txt`,
+        destinationPathname: "backup.txt",
+        access: "public",
+      });
+
+      expect(mockCopy).toHaveBeenCalledWith(
+        `${baseUrl}/test.txt`,
+        "backup.txt",
+        { access: "public" }
+      );
+    });
+
+    it("direct export uploadAsset defaults to public", async () => {
+      mockPut.mockResolvedValue({
+        url: `${baseUrl}/test.txt`,
+        downloadUrl: `${baseUrl}/test.txt?download=1`,
+        pathname: "test.txt",
+        contentType: "text/plain",
+        contentDisposition: "inline",
+        etag: "test-etag",
+      });
+
+      await execute(uploadAsset, {
+        pathname: "test.txt",
+        content: "Hello",
+      });
+
+      expect(mockPut).toHaveBeenCalledWith("test.txt", "Hello", {
+        access: "public",
+        contentType: undefined,
+      });
+    });
+
+    it("direct export uploadAsset allows per-call private", async () => {
+      mockPut.mockResolvedValue({
+        url: `${baseUrl}/test.txt`,
+        downloadUrl: `${baseUrl}/test.txt?download=1`,
+        pathname: "test.txt",
+        contentType: "text/plain",
+        contentDisposition: "inline",
+        etag: "test-etag",
+      });
+
+      await execute(uploadAsset, {
+        pathname: "test.txt",
+        content: "Hello",
+        access: "private",
+      });
+
+      expect(mockPut).toHaveBeenCalledWith("test.txt", "Hello", {
+        access: "private",
+        contentType: undefined,
+        addRandomSuffix: undefined,
+        allowOverwrite: undefined,
+      });
+    });
+  });
+
+  describe("allowOverwrite and addRandomSuffix", () => {
+    it("factory-level allowOverwrite applies to uploadAsset", async () => {
+      mockPut.mockResolvedValue({
+        url: `${baseUrl}/test.txt`,
+        downloadUrl: `${baseUrl}/test.txt?download=1`,
+        pathname: "test.txt",
+        contentType: "text/plain",
+        contentDisposition: "inline",
+        etag: "test-etag",
+      });
+
+      const tools = createBlobTools({ allowOverwrite: true });
+      await execute(tools.uploadAsset, {
+        pathname: "test.txt",
+        content: "Hello",
+      });
+
+      expect(mockPut).toHaveBeenCalledWith("test.txt", "Hello", {
+        access: "public",
+        contentType: undefined,
+        addRandomSuffix: undefined,
+        allowOverwrite: true,
+      });
+    });
+
+    it("factory-level addRandomSuffix applies to uploadAsset", async () => {
+      mockPut.mockResolvedValue({
+        url: `${baseUrl}/test-abc123.txt`,
+        downloadUrl: `${baseUrl}/test-abc123.txt?download=1`,
+        pathname: "test-abc123.txt",
+        contentType: "text/plain",
+        contentDisposition: "inline",
+        etag: "test-etag",
+      });
+
+      const tools = createBlobTools({ addRandomSuffix: true });
+      await execute(tools.uploadAsset, {
+        pathname: "test.txt",
+        content: "Hello",
+      });
+
+      expect(mockPut).toHaveBeenCalledWith("test.txt", "Hello", {
+        access: "public",
+        contentType: undefined,
+        addRandomSuffix: true,
+        allowOverwrite: undefined,
+      });
+    });
+
+    it("per-call allowOverwrite overrides factory default", async () => {
+      mockPut.mockResolvedValue({
+        url: `${baseUrl}/test.txt`,
+        downloadUrl: `${baseUrl}/test.txt?download=1`,
+        pathname: "test.txt",
+        contentType: "text/plain",
+        contentDisposition: "inline",
+        etag: "test-etag",
+      });
+
+      const tools = createBlobTools({ allowOverwrite: false });
+      await execute(tools.uploadAsset, {
+        pathname: "test.txt",
+        content: "Hello",
+        allowOverwrite: true,
+      });
+
+      expect(mockPut).toHaveBeenCalledWith("test.txt", "Hello", {
+        access: "public",
+        contentType: undefined,
+        addRandomSuffix: undefined,
+        allowOverwrite: true,
+      });
+    });
+
+    it("per-call addRandomSuffix overrides factory default", async () => {
+      mockPut.mockResolvedValue({
+        url: `${baseUrl}/test-abc123.txt`,
+        downloadUrl: `${baseUrl}/test-abc123.txt?download=1`,
+        pathname: "test-abc123.txt",
+        contentType: "text/plain",
+        contentDisposition: "inline",
+        etag: "test-etag",
+      });
+
+      const tools = createBlobTools({ addRandomSuffix: false });
+      await execute(tools.uploadAsset, {
+        pathname: "test.txt",
+        content: "Hello",
+        addRandomSuffix: true,
+      });
+
+      expect(mockPut).toHaveBeenCalledWith("test.txt", "Hello", {
+        access: "public",
+        contentType: undefined,
+        addRandomSuffix: true,
+        allowOverwrite: undefined,
+      });
+    });
   });
 });
