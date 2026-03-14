@@ -4,11 +4,11 @@ Guidelines for AI coding agents working in this repository.
 
 ## Project Overview
 
-TypeScript library providing [AI SDK](https://ai-sdk.dev) tools for [Vercel Blob](https://vercel.com/docs/vercel-blob) storage. Exports: `uploadAsset`, `listAssets`, `deleteAsset`, `deleteAssets`, `copyAsset`, `getAssetInfo`, `downloadAsset`, `createBlobTools`.
+TypeScript library providing [AI SDK](https://ai-sdk.dev/docs/introduction.md) tools for [Vercel Blob](https://vercel.com/docs/vercel-blob.md) storage. Exports: `uploadAsset`, `listAssets`, `deleteAsset`, `deleteAssets`, `copyAsset`, `getAssetInfo`, `downloadAsset`, `createBlobTools`.
 
 ## Commands
 
-**Package manager**: pnpm (v10.28.2)
+**Package manager**: pnpm (v10.32.1)
 
 ```bash
 pnpm install          # Install dependencies
