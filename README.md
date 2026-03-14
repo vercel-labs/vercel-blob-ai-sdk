@@ -29,35 +29,75 @@ const { text } = await generateText({
 });
 ```
 
+### Peer dependencies
+
+This package requires [`ai`](https://ai-sdk.dev) (^6.0.67) and [`zod`](https://zod.dev) (^4.3.6) as peer dependencies.
+
 ## Available Tools
 
-| Tool | Description |
-|------|-------------|
-| `uploadAsset` | Upload files, images, or text content to cloud storage |
-| `listAssets` | List stored assets with optional filtering by prefix |
-| `getAssetInfo` | Get metadata about an asset without downloading |
-| `downloadAsset` | Download and retrieve the contents of an asset |
-| `copyAsset` | Copy an asset to a new location |
-| `deleteAsset` | Delete a single asset (requires approval) |
-| `deleteAssets` | Delete multiple assets at once (requires approval) |
+| Tool | Description | Needs approval |
+|------|-------------|:-:|
+| `uploadAsset` | Upload files, images, or text content to blob storage | No |
+| `listAssets` | List stored assets with optional prefix filtering and pagination | No |
+| `getAssetInfo` | Get metadata (size, content type, upload date) without downloading | No |
+| `downloadAsset` | Download and retrieve file contents (text or base64) | No |
+| `copyAsset` | Copy an asset to a new path without re-uploading | No |
+| `deleteAsset` | Permanently delete a single asset | Yes |
+| `deleteAssets` | Permanently delete multiple assets at once | Yes |
 
-## Path Prefix
+## Configuring tools
 
-Use `createBlobTools` to scope all path-based operations under a prefix — useful for multi-tenant apps or organized storage:
+Use `createBlobTools` to scope operations under a path prefix, configure access control, and customize individual tool behavior.
 
 ```ts
 import { createBlobTools } from "vercel-blob-ai-sdk";
 
-const { uploadAsset, listAssets, copyAsset } = createBlobTools({
+const tools = createBlobTools({
   pathPrefix: "tenant-abc",
+  access: "private",
+  allowOverwrite: true,
+  overrides: {
+    deleteAsset: { needsApproval: false },
+    uploadAsset: { description: "Store tenant files" },
+  },
 });
-
-// uploadAsset pathname "doc.txt" → stored as "tenant-abc/doc.txt"
-// listAssets with no prefix → lists only "tenant-abc/" assets
-// copyAsset destination "backup.txt" → copies to "tenant-abc/backup.txt"
 ```
 
-The prefix applies to `uploadAsset`, `listAssets`, and `copyAsset`. URL-based tools (`deleteAsset`, `deleteAssets`, `getAssetInfo`, `downloadAsset`) are unaffected.
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `pathPrefix` | `string` | `""` | Prefix prepended to all asset paths |
+| `access` | `"public" \| "private"` | `"public"` | Default access level for uploaded/copied assets |
+| `addRandomSuffix` | `boolean` | `false` | Add a random suffix to filenames to avoid conflicts |
+| `allowOverwrite` | `boolean` | `false` | Allow overwriting existing assets at the same path |
+| `overrides` | `Record<string, ToolOverrides>` | — | Per-tool overrides (see below) |
+
+The path prefix applies to `uploadAsset`, `listAssets`, and `copyAsset`. URL-based tools (`deleteAsset`, `deleteAssets`, `getAssetInfo`, `downloadAsset`) are unaffected by the prefix.
+
+### Tool overrides
+
+The `overrides` option lets you customize any AI SDK [`tool()`](https://ai-sdk.dev/docs/ai-sdk-core/tools-and-tool-calling) property on a per-tool basis, keyed by tool name.
+
+```ts
+import type { ToolOverrides } from "vercel-blob-ai-sdk";
+```
+
+Supported override properties:
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `description` | `string` | Custom tool description for the model |
+| `title` | `string` | Human-readable title |
+| `strict` | `boolean` | Strict mode for input generation |
+| `needsApproval` | `boolean \| function` | Gate execution behind approval |
+| `providerOptions` | `ProviderOptions` | Provider-specific metadata |
+| `onInputStart` | `function` | Callback when argument streaming starts |
+| `onInputDelta` | `function` | Callback on each streaming delta |
+| `onInputAvailable` | `function` | Callback when full input is available |
+| `toModelOutput` | `function` | Custom mapping of tool result to model output |
+
+Core properties (`execute`, `inputSchema`, `outputSchema`) cannot be overridden.
 
 ## Resources
 
