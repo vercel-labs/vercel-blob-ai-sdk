@@ -4,11 +4,11 @@ Guidelines for AI coding agents working in this repository.
 
 ## Project Overview
 
-TypeScript library providing [AI SDK](https://ai-sdk.dev) tools for [Vercel Blob](https://vercel.com/docs/vercel-blob) storage. Exports: `uploadAsset`, `listAssets`, `deleteAsset`, `deleteAssets`, `copyAsset`, `getAssetInfo`, `downloadAsset`, `createBlobTools`.
+TypeScript library providing [AI SDK](https://ai-sdk.dev/docs/introduction.md) tools for [Vercel Blob](https://vercel.com/docs/vercel-blob.md) storage. Exports: `uploadAsset`, `listAssets`, `deleteAsset`, `deleteAssets`, `copyAsset`, `getAssetInfo`, `downloadAsset`, `createBlobTools`, and the `ToolOverrides` type.
 
 ## Commands
 
-**Package manager**: pnpm (v10.28.2)
+**Package manager**: pnpm (v10.32.1)
 
 ```bash
 pnpm install          # Install dependencies
@@ -80,7 +80,7 @@ export const myTool = tool({
   inputExamples: [{ input: { param: "example" } }],
   outputSchema: MyOutputSchema,
   strict: true,
-  needsApproval: false, // true for destructive operations (delete, overwrite)
+  needsApproval: false,
   execute: async ({ param }) => {
     try {
       const result = await someOperation();
@@ -96,6 +96,12 @@ export const myTool = tool({
 });
 ```
 
+### Tool Overrides Pattern
+
+Factory-created tools accept an optional `overrides?: ToolOverrides` parameter spread at the end of the `tool()` call. Singleton tools (URL-based) are conditionally spread in the `createBlobTools` factory when overrides are present.
+
+`ToolOverrides` is defined as `Partial<Pick<Tool, ...>>` using the `Tool` type from `"ai"` (defaults to `Tool<any, any>`). It includes: `description`, `title`, `strict`, `needsApproval`, `providerOptions`, `onInputStart`, `onInputDelta`, `onInputAvailable`, `toModelOutput`. Core properties (`execute`, `inputSchema`, `outputSchema`) are excluded.
+
 ### Error Handling
 
 - Use try-catch in async functions
@@ -106,8 +112,11 @@ export const myTool = tool({
 ## Project Structure
 
 ```
-src/index.ts    # Main entry, exports all tools
-dist/           # Build output (ESM)
+src/index.ts                # Main entry, exports all tools
+dist/                       # Build output (ESM)
+tests/index.test.ts         # Unit tests (mocked @vercel/blob)
+tests/ai-sdk.test.ts        # AI SDK integration tests (MockLanguageModelV3)
+tests/integration.test.ts   # Live integration tests (requires BLOB_READ_WRITE_TOKEN)
 ```
 
 ## Key Linting Rules
