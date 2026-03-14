@@ -1,4 +1,5 @@
 import { copy, del, head, list, put } from "@vercel/blob";
+import type { Tool } from "ai";
 import { tool } from "ai";
 import { z } from "zod";
 
@@ -76,12 +77,28 @@ const DownloadResultSchema = z.object({
   error: z.string().optional().describe("Error message if failed"),
 });
 
-// --- Helpers and interfaces ---
+export type ToolOverrides = Partial<
+  Pick<
+    Tool,
+    | "description"
+    | "needsApproval"
+    | "onInputAvailable"
+    | "onInputDelta"
+    | "onInputStart"
+    | "providerOptions"
+    | "strict"
+    | "title"
+    | "toModelOutput"
+  >
+>;
 
 export interface CreateBlobToolsOptions {
   access?: "private" | "public";
   addRandomSuffix?: boolean;
   allowOverwrite?: boolean;
+  overrides?: {
+    [K in keyof BlobTools]?: ToolOverrides;
+  };
   pathPrefix?: string;
 }
 
@@ -107,7 +124,11 @@ const joinPath = (prefix: string, path: string): string => {
 
 // --- Path-based tool creators ---
 
-const createUploadAsset = (prefix: string, defaults: UploadDefaults) =>
+const createUploadAsset = (
+  prefix: string,
+  defaults: UploadDefaults,
+  overrides?: ToolOverrides
+) =>
   tool({
     description:
       "Upload a file, image, document, or text content to permanent cloud storage. " +
@@ -211,9 +232,10 @@ const createUploadAsset = (prefix: string, defaults: UploadDefaults) =>
         };
       }
     },
+    ...overrides,
   });
 
-const createListAssets = (prefix: string) =>
+const createListAssets = (prefix: string, overrides?: ToolOverrides) =>
   tool({
     description:
       "List all stored assets in cloud storage with optional filtering by folder/prefix. " +
@@ -279,9 +301,14 @@ const createListAssets = (prefix: string) =>
         };
       }
     },
+    ...overrides,
   });
 
-const createCopyAsset = (prefix: string, defaults: UploadDefaults) =>
+const createCopyAsset = (
+  prefix: string,
+  defaults: UploadDefaults,
+  overrides?: ToolOverrides
+) =>
   tool({
     description:
       "Copy an existing asset to a new location/pathname without re-uploading. " +
@@ -339,9 +366,8 @@ const createCopyAsset = (prefix: string, defaults: UploadDefaults) =>
         };
       }
     },
+    ...overrides,
   });
-
-// --- URL-based tools (no prefix needed) ---
 
 export const deleteAsset = tool({
   description:
@@ -535,15 +561,11 @@ export const downloadAsset = tool({
   },
 });
 
-// --- Direct exports (no prefix) ---
-
 const defaultUploadDefaults: UploadDefaults = { access: "public" };
 
 export const uploadAsset = createUploadAsset("", defaultUploadDefaults);
 export const listAssets = createListAssets("");
 export const copyAsset = createCopyAsset("", defaultUploadDefaults);
-
-// --- Factory ---
 
 export interface BlobTools {
   copyAsset: typeof copyAsset;
@@ -566,12 +588,28 @@ export const createBlobTools = (
   };
 
   return {
-    uploadAsset: createUploadAsset(prefix, uploadDefaults),
-    listAssets: createListAssets(prefix),
-    deleteAsset,
-    deleteAssets,
-    getAssetInfo,
-    copyAsset: createCopyAsset(prefix, uploadDefaults),
-    downloadAsset,
+    uploadAsset: createUploadAsset(
+      prefix,
+      uploadDefaults,
+      options?.overrides?.uploadAsset
+    ),
+    listAssets: createListAssets(prefix, options?.overrides?.listAssets),
+    deleteAsset: options?.overrides?.deleteAsset
+      ? { ...deleteAsset, ...options.overrides.deleteAsset }
+      : deleteAsset,
+    deleteAssets: options?.overrides?.deleteAssets
+      ? { ...deleteAssets, ...options.overrides.deleteAssets }
+      : deleteAssets,
+    getAssetInfo: options?.overrides?.getAssetInfo
+      ? { ...getAssetInfo, ...options.overrides.getAssetInfo }
+      : getAssetInfo,
+    copyAsset: createCopyAsset(
+      prefix,
+      uploadDefaults,
+      options?.overrides?.copyAsset
+    ),
+    downloadAsset: options?.overrides?.downloadAsset
+      ? { ...downloadAsset, ...options.overrides.downloadAsset }
+      : downloadAsset,
   };
 };

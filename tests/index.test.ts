@@ -1,5 +1,6 @@
 import type { ToolExecutionOptions } from "ai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ToolOverrides } from "../src/index.ts";
 import {
   copyAsset,
   createBlobTools,
@@ -1055,6 +1056,417 @@ describe("createBlobTools", () => {
         addRandomSuffix: true,
         allowOverwrite: undefined,
       });
+    });
+  });
+});
+
+describe("createBlobTools overrides", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe("description", () => {
+    it("overrides description on a factory-created tool", () => {
+      const tools = createBlobTools({
+        overrides: {
+          uploadAsset: { description: "Custom upload description" },
+        },
+      });
+
+      expect(tools.uploadAsset.description).toBe("Custom upload description");
+    });
+
+    it("overrides description on a singleton tool", () => {
+      const tools = createBlobTools({
+        overrides: {
+          deleteAsset: { description: "Custom delete description" },
+        },
+      });
+
+      expect(tools.deleteAsset.description).toBe("Custom delete description");
+    });
+
+    it("does not affect tools without overrides", () => {
+      const tools = createBlobTools({
+        overrides: {
+          uploadAsset: { description: "Custom" },
+        },
+      });
+
+      expect(tools.listAssets.description).toContain("List all stored assets");
+      expect(tools.deleteAsset.description).toContain("Permanently delete");
+    });
+  });
+
+  describe("title", () => {
+    it("sets title on a factory-created tool", () => {
+      const tools = createBlobTools({
+        overrides: {
+          listAssets: { title: "Browse Files" },
+        },
+      });
+
+      expect(tools.listAssets.title).toBe("Browse Files");
+    });
+
+    it("sets title on a singleton tool", () => {
+      const tools = createBlobTools({
+        overrides: {
+          getAssetInfo: { title: "File Info" },
+        },
+      });
+
+      expect(tools.getAssetInfo.title).toBe("File Info");
+    });
+  });
+
+  describe("strict", () => {
+    it("overrides strict on a factory-created tool", () => {
+      const tools = createBlobTools({
+        overrides: {
+          uploadAsset: { strict: false },
+        },
+      });
+
+      expect(tools.uploadAsset.strict).toBe(false);
+    });
+
+    it("overrides strict on a singleton tool", () => {
+      const tools = createBlobTools({
+        overrides: {
+          downloadAsset: { strict: false },
+        },
+      });
+
+      expect(tools.downloadAsset.strict).toBe(false);
+    });
+
+    it("preserves default strict when not overridden", () => {
+      const tools = createBlobTools({
+        overrides: {
+          uploadAsset: { description: "Custom" },
+        },
+      });
+
+      expect(tools.uploadAsset.strict).toBe(true);
+    });
+  });
+
+  describe("needsApproval", () => {
+    it("sets needsApproval on a tool that does not have it", () => {
+      const tools = createBlobTools({
+        overrides: {
+          uploadAsset: { needsApproval: true },
+        },
+      });
+
+      expect(tools.uploadAsset.needsApproval).toBe(true);
+    });
+
+    it("disables needsApproval on a tool that has it", () => {
+      const tools = createBlobTools({
+        overrides: {
+          deleteAsset: { needsApproval: false },
+        },
+      });
+
+      expect(tools.deleteAsset.needsApproval).toBe(false);
+    });
+
+    it("supports function form of needsApproval", () => {
+      const approvalFn = () => true;
+      const tools = createBlobTools({
+        overrides: {
+          copyAsset: { needsApproval: approvalFn },
+        },
+      });
+
+      expect(tools.copyAsset.needsApproval).toBe(approvalFn);
+    });
+  });
+
+  describe("providerOptions", () => {
+    it("sets providerOptions on a factory-created tool", () => {
+      const tools = createBlobTools({
+        overrides: {
+          uploadAsset: {
+            providerOptions: {
+              anthropic: { cacheControl: { type: "ephemeral" } },
+            },
+          },
+        },
+      });
+
+      expect(tools.uploadAsset.providerOptions).toEqual({
+        anthropic: { cacheControl: { type: "ephemeral" } },
+      });
+    });
+
+    it("sets providerOptions on a singleton tool", () => {
+      const tools = createBlobTools({
+        overrides: {
+          deleteAssets: {
+            providerOptions: {
+              openai: { parallel_tool_calls: false },
+            },
+          },
+        },
+      });
+
+      expect(tools.deleteAssets.providerOptions).toEqual({
+        openai: { parallel_tool_calls: false },
+      });
+    });
+  });
+
+  describe("callback overrides", () => {
+    it("sets onInputStart on a tool", () => {
+      const onInputStart = vi.fn();
+      const tools = createBlobTools({
+        overrides: {
+          uploadAsset: { onInputStart },
+        },
+      });
+
+      expect(tools.uploadAsset.onInputStart).toBe(onInputStart);
+    });
+
+    it("sets onInputDelta on a tool", () => {
+      const onInputDelta = vi.fn();
+      const tools = createBlobTools({
+        overrides: {
+          listAssets: { onInputDelta },
+        },
+      });
+
+      expect(tools.listAssets.onInputDelta).toBe(onInputDelta);
+    });
+
+    it("sets onInputAvailable on a tool", () => {
+      const onInputAvailable = vi.fn();
+      const tools = createBlobTools({
+        overrides: {
+          getAssetInfo: { onInputAvailable },
+        },
+      });
+
+      expect(tools.getAssetInfo.onInputAvailable).toBe(onInputAvailable);
+    });
+
+    it("sets toModelOutput on a tool", () => {
+      const toModelOutput = vi.fn().mockReturnValue({
+        type: "text" as const,
+        value: "custom",
+      });
+      const tools = createBlobTools({
+        overrides: {
+          downloadAsset: { toModelOutput },
+        },
+      });
+
+      expect(tools.downloadAsset.toModelOutput).toBe(toModelOutput);
+    });
+  });
+
+  describe("override behavior", () => {
+    it("applies overrides to multiple tools simultaneously", () => {
+      const tools = createBlobTools({
+        overrides: {
+          uploadAsset: { needsApproval: true },
+          deleteAsset: { needsApproval: false },
+          listAssets: { description: "Custom list" },
+        },
+      });
+
+      expect(tools.uploadAsset.needsApproval).toBe(true);
+      expect(tools.deleteAsset.needsApproval).toBe(false);
+      expect(tools.listAssets.description).toBe("Custom list");
+    });
+
+    it("applies multiple overrides to the same tool", () => {
+      const tools = createBlobTools({
+        overrides: {
+          uploadAsset: {
+            description: "Custom upload",
+            title: "Upload",
+            strict: false,
+            needsApproval: true,
+          },
+        },
+      });
+
+      expect(tools.uploadAsset.description).toBe("Custom upload");
+      expect(tools.uploadAsset.title).toBe("Upload");
+      expect(tools.uploadAsset.strict).toBe(false);
+      expect(tools.uploadAsset.needsApproval).toBe(true);
+    });
+
+    it("singleton tools with overrides are new instances", () => {
+      const tools = createBlobTools({
+        overrides: {
+          deleteAsset: { description: "Custom" },
+        },
+      });
+
+      expect(tools.deleteAsset).not.toBe(deleteAsset);
+    });
+
+    it("singleton tools without overrides remain same instances", () => {
+      const tools = createBlobTools({
+        overrides: {
+          uploadAsset: { description: "Custom" },
+        },
+      });
+
+      expect(tools.deleteAsset).toBe(deleteAsset);
+      expect(tools.deleteAssets).toBe(deleteAssets);
+      expect(tools.getAssetInfo).toBe(getAssetInfo);
+      expect(tools.downloadAsset).toBe(downloadAsset);
+    });
+
+    it("factory-created tools still execute correctly with overrides", async () => {
+      mockPut.mockResolvedValue({
+        url: `${baseUrl}/test.txt`,
+        downloadUrl: `${baseUrl}/test.txt?download=1`,
+        pathname: "test.txt",
+        contentType: "text/plain",
+        contentDisposition: "inline",
+        etag: "test-etag",
+      });
+
+      const tools = createBlobTools({
+        overrides: {
+          uploadAsset: {
+            description: "Custom",
+            needsApproval: true,
+            strict: false,
+          },
+        },
+      });
+
+      const result = await execute(tools.uploadAsset, {
+        pathname: "test.txt",
+        content: "Hello",
+      });
+
+      expect(result).toMatchObject({
+        success: true,
+        url: `${baseUrl}/test.txt`,
+      });
+      expect(mockPut).toHaveBeenCalled();
+    });
+
+    it("singleton tools still execute correctly with overrides", async () => {
+      mockDel.mockResolvedValue(undefined);
+
+      const tools = createBlobTools({
+        overrides: {
+          deleteAsset: { description: "Custom delete" },
+        },
+      });
+
+      const result = await execute(tools.deleteAsset, {
+        url: `${baseUrl}/test.txt`,
+      });
+
+      expect(result).toMatchObject({
+        success: true,
+        deleted: true,
+      });
+      expect(mockDel).toHaveBeenCalledWith(`${baseUrl}/test.txt`);
+    });
+
+    it("overrides combine with pathPrefix", async () => {
+      mockPut.mockResolvedValue({
+        url: `${baseUrl}/tenant/test.txt`,
+        downloadUrl: `${baseUrl}/tenant/test.txt?download=1`,
+        pathname: "tenant/test.txt",
+        contentType: "text/plain",
+        contentDisposition: "inline",
+        etag: "test-etag",
+      });
+
+      const tools = createBlobTools({
+        pathPrefix: "tenant",
+        overrides: {
+          uploadAsset: { needsApproval: true },
+        },
+      });
+
+      expect(tools.uploadAsset.needsApproval).toBe(true);
+
+      const result = await execute(tools.uploadAsset, {
+        pathname: "test.txt",
+        content: "Hello",
+      });
+
+      expect(result).toMatchObject({ success: true });
+      expect(mockPut).toHaveBeenCalledWith(
+        "tenant/test.txt",
+        "Hello",
+        expect.objectContaining({ access: "public" })
+      );
+    });
+
+    it("overrides combine with access option", async () => {
+      mockPut.mockResolvedValue({
+        url: `${baseUrl}/test.txt`,
+        downloadUrl: `${baseUrl}/test.txt?download=1`,
+        pathname: "test.txt",
+        contentType: "text/plain",
+        contentDisposition: "inline",
+        etag: "test-etag",
+      });
+
+      const tools = createBlobTools({
+        access: "private",
+        overrides: {
+          uploadAsset: { strict: false },
+        },
+      });
+
+      expect(tools.uploadAsset.strict).toBe(false);
+
+      await execute(tools.uploadAsset, {
+        pathname: "test.txt",
+        content: "Hello",
+      });
+
+      expect(mockPut).toHaveBeenCalledWith(
+        "test.txt",
+        "Hello",
+        expect.objectContaining({ access: "private" })
+      );
+    });
+
+    it("no overrides returns tools unchanged", () => {
+      const tools = createBlobTools();
+
+      expect(tools.deleteAsset).toBe(deleteAsset);
+      expect(tools.deleteAssets).toBe(deleteAssets);
+      expect(tools.getAssetInfo).toBe(getAssetInfo);
+      expect(tools.downloadAsset).toBe(downloadAsset);
+      expect(tools.uploadAsset.description).toContain("Upload");
+      expect(tools.uploadAsset.strict).toBe(true);
+    });
+
+    it("empty overrides object returns tools unchanged", () => {
+      const tools = createBlobTools({ overrides: {} });
+
+      expect(tools.deleteAsset).toBe(deleteAsset);
+      expect(tools.deleteAssets).toBe(deleteAssets);
+      expect(tools.getAssetInfo).toBe(getAssetInfo);
+      expect(tools.downloadAsset).toBe(downloadAsset);
+    });
+
+    it("ToolOverrides type is importable", () => {
+      const overrides: ToolOverrides = {
+        description: "test",
+        strict: false,
+        needsApproval: true,
+      };
+
+      expect(overrides.description).toBe("test");
     });
   });
 });

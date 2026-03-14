@@ -1,6 +1,6 @@
 {
   "name": "vercel-blob-ai-sdk",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Vercel Blob storage tools for the AI SDK",
   "keywords": [
     "ai",
@@ -19,6 +19,7 @@
     "name": "Ben Sabic",
     "url": "https://bensabic.dev"
   },
+  "publisher": "Vercel Labs",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/vercel-labs/vercel-blob-ai-sdk.git"
@@ -50,14 +51,14 @@
     "@vercel/blob": "^2.3.1"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.4.6",
+    "@biomejs/biome": "2.4.7",
     "@types/node": "^25.5.0",
     "@vitest/coverage-v8": "^4.1.0",
     "dotenv": "^17.3.1",
     "tsup": "^8.5.1",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
-    "ultracite": "7.3.0",
+    "ultracite": "7.3.1",
     "vitest": "^4.1.0"
   },
   "peerDependencies": {
